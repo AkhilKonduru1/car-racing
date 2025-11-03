@@ -1,14 +1,141 @@
-"""
-Watch Trained Agent Play CarRacing-v3
+import gymnasium as gym
+from stable_baselines3 import PPO
+from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
+import argparse
+import os
+import time
 
-This script loads a trained model and visualizes it playing the CarRacing-v3 
-environment in real-time. You can watch the AI agent drive around the track!
 
-Usage:
-    python watch_agent.py                           # Use default model path
-    python watch_agent.py --model path/to/model.zip # Specify custom model
-    python watch_agent.py --episodes 5              # Watch for 5 episodes
-"""
+def find_best_model(models_dir="./models"):
+    best_model_path = f"{models_dir}/best_model.zip"
+    if os.path.exists(best_model_path):
+        return best_model_path
+    
+    final_model_path = f"{models_dir}/ppo_carracing_final.zip"
+    if os.path.exists(final_model_path):
+        return final_model_path
+    
+    checkpoints_dir = f"{models_dir}/checkpoints"
+    if os.path.exists(checkpoints_dir):
+        checkpoint_files = [f for f in os.listdir(checkpoints_dir) if f.endswith('.zip')]
+        if checkpoint_files:
+            checkpoint_files.sort(reverse=True)
+            return os.path.join(checkpoints_dir, checkpoint_files[0])
+    
+    return None
+
+
+def watch_agent(model_path, n_episodes=5, delay=0.01):
+    print(f"\n{'='*60}")
+    print("CarRacing-v3 Agent Visualization")
+    print(f"{'='*60}\n")
+    
+    if not os.path.exists(model_path):
+        print(f"❌ Error: Model file not found at {model_path}")
+        print("\nMake sure you have trained a model first by running:")
+        print("  python car_racing_trainer.py")
+        return
+    
+    print(f"Loading model from: {model_path}\n")
+    model = PPO.load(model_path)
+    
+    def make_env():
+        def _init():
+            return gym.make("CarRacing-v3", continuous=False, render_mode="human")
+        return _init
+    
+    env = DummyVecEnv([make_env()])
+    env = VecFrameStack(env, n_stack=4)  
+    
+    print(f"🎮 Starting visualization for {n_episodes} episodes...")
+    print("🎬 Close the window to stop early\n")
+    
+    try:
+        for episode in range(n_episodes):
+            obs = env.reset()
+            episode_reward = 0
+            done = False
+            steps = 0
+            
+            print(f"{'─'*60}")
+            print(f"Episode {episode + 1}/{n_episodes}")
+            print(f"{'─'*60}")
+            
+            while not done:
+                action, _states = model.predict(obs, deterministic=True)
+                obs, reward, done_array, info = env.step(action)
+                done = done_array[0]
+                episode_reward += reward[0]
+                steps += 1
+                
+                if delay > 0:
+                    time.sleep(delay)
+            
+            print(f"Reward: {episode_reward:.2f} | Steps: {steps}")
+            print()  
+        
+        print(f"{'='*60}")
+        print("Visualization Complete!")
+        print(f"{'='*60}\n")
+        
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Visualization interrupted by user")
+    finally:
+        env.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Watch a trained CarRacing-v3 agent play"
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Path to the trained model (default: auto-detect best model)"
+    )
+    parser.add_argument(
+        "--episodes",
+        type=int,
+        default=5,
+        help="Number of episodes to watch (default: 5)"
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=0.01,
+        help="Delay between frames in seconds (default: 0.01)"
+    )
+    parser.add_argument(
+        "--models-dir",
+        type=str,
+        default="./models",
+        help="Directory containing saved models (default: ./models)"
+    )
+    
+    args = parser.parse_args()
+    
+    if args.model is None:
+        print("Auto-detecting best available model...")
+        model_path = find_best_model(args.models_dir)
+        if model_path is None:
+            print(f"\n❌ Error: No trained models found in {args.models_dir}")
+            print("\nTrain a model first by running:")
+            print("  python car_racing_trainer.py")
+            return
+        print(f"Found: {model_path}\n")
+    else:
+        model_path = args.model
+    
+    watch_agent(
+        model_path=model_path,
+        n_episodes=args.episodes,
+        delay=args.delay
+    )
+
+
+if __name__ == "__main__":
+    main()
 
 import gymnasium as gym
 from stable_baselines3 import PPO
